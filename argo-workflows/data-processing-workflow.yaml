@@ -1,0 +1,71 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: data-processing-
+  namespace: argo
+spec:
+  serviceAccountName: argo-workflow
+  entrypoint: data-pipeline
+  templates:
+  - name: data-pipeline
+    dag:
+      tasks:
+      - name: extract-data
+        template: extract
+      - name: transform-data
+        template: transform
+        dependencies: [extract-data]
+        arguments:
+          parameters:
+          - name: input-data
+            value: "{{tasks.extract-data.outputs.parameters.extracted-file}}"
+      - name: load-data
+        template: load
+        dependencies: [transform-data]
+        arguments:
+          parameters:
+          - name: processed-data
+            value: "{{tasks.transform-data.outputs.parameters.transformed-file}}"
+      - name: validate-data
+        template: validate
+        dependencies: [load-data]
+
+  - name: extract
+    container:
+      image: alpine:latest
+      command: [sh, -c]
+      args: ["echo 'Extracting data from source...'; echo 'raw-data.csv' > /tmp/extracted.txt; sleep 10"]
+    outputs:
+      parameters:
+      - name: extracted-file
+        valueFrom:
+          path: /tmp/extracted.txt
+
+  - name: transform
+    inputs:
+      parameters:
+      - name: input-data
+    container:
+      image: alpine:latest
+      command: [sh, -c]
+      args: ["echo 'Transforming {{inputs.parameters.input-data}}...'; echo 'processed-data.csv' > /tmp/transformed.txt; sleep 15"]
+    outputs:
+      parameters:
+      - name: transformed-file
+        valueFrom:
+          path: /tmp/transformed.txt
+
+  - name: load
+    inputs:
+      parameters:
+      - name: processed-data
+    container:
+      image: alpine:latest
+      command: [sh, -c]
+      args: ["echo 'Loading {{inputs.parameters.processed-data}} to database...'; sleep 10"]
+
+  - name: validate
+    container:
+      image: alpine:latest
+      command: [sh, -c]
+      args: ["echo 'Validating data integrity...'; sleep 5; echo 'Validation complete!'"]
